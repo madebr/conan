@@ -75,6 +75,31 @@ def _handle_conan_conf(current_conan_conf, new_conan_conf_path):
         current_conan_conf.write(f)
 
 
+def _handle_configinstall_py(filename, config, cache, output, folder):
+    g = {}
+    try:
+        exec(compile(load(filename), filename, "exec"), {}, g)
+    except:
+        raise ConanException("Error occurred while loading %s" % filename)
+    if "settings_transform" in g:
+        import ruamel.yaml
+
+        yaml = ruamel.yaml.YAML()
+        yaml.preserve_quotes = True
+        yaml.indent = 4
+        settings_path = os.path.join(cache.cache_folder, "settings.yml")
+        with open(settings_path) as f_settings:
+            settings = yaml.load(f_settings.read())
+        try:
+            settings = g["settings_transform"](settings)
+        except:
+            raise ConanException("Error occurred while executing settings_transform")
+        if not isinstance(settings, dict):
+            raise ConanException("settings_transform needs to return a dict")
+        with open(settings_path, "w") as f_settings:
+            yaml.dump(settings, f_settings)
+
+
 def _filecopy(src, filename, dst):
     # https://github.com/conan-io/conan/issues/6556
     # This is just a local convenience for "conan config install", using copyfile to avoid
@@ -104,6 +129,9 @@ def _process_file(directory, filename, config, cache, output, folder):
         finally:
             _filecopy(directory, filename, cache.cache_folder)
             migrate_registry_file(cache, output)
+    elif filename == "configinstall.py":
+        output.info("Processing configinstall.py")
+        _handle_configinstall_py(filename, config, cache, output, folder)
     elif filename == "remotes.json":
         # Fix for Conan 2.0
         raise ConanException("remotes.json install is not supported yet. Use 'remotes.txt'")
